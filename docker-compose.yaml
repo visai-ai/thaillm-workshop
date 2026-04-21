@@ -1,0 +1,186 @@
+services:
+  # minio:
+  #   image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+  #   container_name: minio
+  #   restart: always
+  #   command: server /data --console-address ":9001"
+  #   expose:
+  #     - "9000"
+  #     - "9001"
+  #   ports:
+  #     - "9000:9000"
+  #     - "9001:9001"
+  #   environment:
+  #     MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+  #     MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+  #   volumes:
+  #     - ./minio/data:/data
+  postgres:
+    image: postgres:18
+    container_name: postgres
+    restart: always
+    expose:
+      - "5432"
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    volumes:
+      - ./pgdata/data:/var/lib/postgresql
+      - ./pgdata/log:/var/log/postgresql
+  prescreen-rulesets:
+    image: registry.gitlab.com/visai-ai/projects/bdi/application/prescreen-rulesets:latest
+    container_name: prescreen-rulesets
+    restart: always
+    expose:
+      - "8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      DEFAULT_ER_SEVERITY: ${DEFAULT_ER_SEVERITY:-sev003}
+      DEFAULT_ER_DEPARTMENT: ${DEFAULT_ER_DEPARTMENT:-dept002}
+      HF_TOKEN: ${HF_TOKEN}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      PEDIATRIC_AGE_THRESHOLD: ${PEDIATRIC_AGE_THRESHOLD:-18}
+      PG_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+  fact-vector-db:
+    image: registry.gitlab.com/visai-ai/projects/bdi/application/fact-vector-db:latest
+    container_name: fact-vector-db
+    restart: always
+    expose:
+      - "41000"
+    ports:
+      - "41000:41000"
+    depends_on:
+      - postgres
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all # or a specific number like 0
+              capabilities: [ gpu ]
+    environment:
+      API_KEY: ${API_KEY:-changeme}
+      CACHE_DIR: ${CACHE_DIR:-/app/cache}
+      DEVICE: cuda
+      HF_TOKEN: ${HF_TOKEN}
+      INCLUDE_GOLDEN_FACT: ${INCLUDE_GOLDEN_FACT:-False}
+      NPROBES: ${NPROBES:-20}
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: all
+      RERANK_TOP_N: ${RERANK_TOP_N:-32}
+      TOP_K: ${TOP_K:-32}
+      USE_RERANKER: ${USE_RERANKER:-True}
+    shm_size: "4gb"
+  rabbitmq:
+    image: rabbitmq:4.2-management
+    container_name: rabbitmq
+    restart: always
+    expose:
+      - "5672"
+      - "15672"
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-guest}
+      RABBITMQ_DEFAULT_VHOST: /
+      RABBITMQ_NODENAME: rabbitmq@localhost
+    volumes:
+      - ./rabbitmq/data:/var/lib/rabbitmq
+      - ./rabbitmq/log:/var/log/rabbitmq
+  backend:
+    image: registry.gitlab.com/visai-ai/projects/bdi/application/backend:latest
+    container_name: backend
+    restart: always
+    expose:
+      - "3001"
+    ports:
+      - "3001:3001"
+    depends_on:
+      - fact-vector-db
+      - postgres
+      - prescreen-rulesets
+      - rabbitmq
+    environment:
+      APP_BASE_URL: http://localhost:3001/medical-api
+      ARENA_ENCRYPTION_KEY: ${ARENA_ENCRYPTION_KEY}
+      AUTH_SECRET: ${AUTH_SECRET:-changeme}
+      DATABASE_URL: ${DATABASE_URL}
+
+      FRONTEND_BASE_URL: http://localhost:3000/medical
+      FRONTEND_EMAIL_VERIFICATION_CALLBACK_URL: http://localhost:3000/medical/auth/verified-email
+      FRONTEND_EMAIL_VERIFICATION_FAILED_CALLBACK_URL: http://localhost:3000/medical/auth/verify-email
+      FRONTEND_RESET_PASSWORD_CALLBACK_URL: http://localhost:3000/medical/auth/reset-password
+
+      INTERNAL_AI_API_KEY: ${INTERNAL_AI_API_KEY:-changeme}
+      LLM_API_KEY: ${LLM_API_KEY:-changeme}
+      LLM_BASE_URL: https://api.openai.com/v1
+      LLM_MODEL: ${LLM_MODEL:-gpt-5.4}
+      LLM_ENABLE_TOOLS: true
+
+      LLM_ARENA_1_API_KEY: ${LLM_ARENA_1_API_KEY:-changeme}
+      LLM_ARENA_1_NAME: ThaiLLM-Qwen
+      LLM_ARENA_1_BASE_URL: https://thaillm.or.th/vllm-qwen/v1
+      LLM_ARENA_1_MODEL: Qwen/Qwen3-30B-A3B-Instruct-2507-FP8
+
+      LLM_ARENA_2_API_KEY: ${LLM_ARENA_2_API_KEY:-changeme}
+      LLM_ARENA_2_NAME: ThaiLLM-OpenThaiGPT
+      LLM_ARENA_2_BASE_URL: https://thaillm.or.th/api/openthaigpt/v1
+      LLM_ARENA_2_MODEL: /model
+
+      LLM_ARENA_3_API_KEY: ${LLM_ARENA_3_API_KEY:-changeme}
+      LLM_ARENA_3_NAME: ThaiLLM-Pathumma
+      LLM_ARENA_3_BASE_URL: https://thaillm.or.th/api/pathumma/v1
+      LLM_ARENA_3_MODEL: /model
+
+      LLM_ARENA_4_API_KEY: ${LLM_ARENA_4_API_KEY:-changeme}
+      LLM_ARENA_4_NAME: ThaiLLM-Typhoon
+      LLM_ARENA_4_BASE_URL: https://thaillm.or.th/api/typhoon/v1
+      LLM_ARENA_4_MODEL: /model
+
+      LLM_ARENA_5_API_KEY: ${LLM_ARENA_5_API_KEY:-changeme}
+      LLM_ARENA_5_NAME: ThaiLLM-THaLLE
+      LLM_ARENA_5_BASE_URL: https://thaillm.or.th/api/kbtg/v1
+      LLM_ARENA_5_MODEL: /model
+
+      MEDICAL_FACTS_API_KEY: ${MEDICAL_FACTS_API_KEY:-changeme}
+      MEDICAL_FACTS_API_URL: http://fact-vector-db:41000
+      NODE_ENV: development
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      PRESCREEN_API_URL: http://prescreen-rulesets:8080/api/v1
+      SMTP_USER: ${SMTP_USER:-changeme}
+      SMTP_PASS: ${SMTP_PASS:-changeme}
+      RABBITMQ_URL: ${RABBITMQ_URL:-changeme}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-changeme}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-changeme}
+      VAPID_KEYS_PRIVATE_KEY: ${VAPID_KEYS_PRIVATE_KEY:-changeme}
+      VAPID_KEYS_PUBLIC_KEY: ${VAPID_KEYS_PUBLIC_KEY:-changeme}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_MAIL_FROM: ${SMTP_MAIL_FROM}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME}
+      SMTP_USE_TLS: ${SMTP_USE_TLS}
+      DB_AUTO_MIGRATION: true
+      ENABLE_CRON_JOB: true
+      ADMIN_EMAILS:
+      EMAIL_TEMPLATE_QUEUE: q.email
+  frontend:
+    image: registry.gitlab.com/visai-ai/projects/bdi/application/frontend:latest
+    container_name: frontend
+    restart: always
+    expose:
+      - "3000"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
