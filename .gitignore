@@ -1,0 +1,6 @@
+.DS_Store
+.env
+fact-vector-db
+pgdata
+rabbitmq
+services

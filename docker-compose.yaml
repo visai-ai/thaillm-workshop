@@ -1,20 +1,4 @@
 services:
-  # minio:
-  #   image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
-  #   container_name: minio
-  #   restart: always
-  #   command: server /data --console-address ":9001"
-  #   expose:
-  #     - "9000"
-  #     - "9001"
-  #   ports:
-  #     - "9000:9000"
-  #     - "9001:9001"
-  #   environment:
-  #     MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-  #     MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
-  #   volumes:
-  #     - ./minio/data:/data
   postgres:
     image: postgres:18
     container_name: postgres
@@ -33,7 +17,9 @@ services:
       - ./pgdata/data:/var/lib/postgresql
       - ./pgdata/log:/var/log/postgresql
   prescreen-rulesets:
-    image: registry.gitlab.com/visai-ai/projects/bdi/application/prescreen-rulesets:latest
+    build:
+      context: ./services/prescreen-rulesets
+    image: thaillm-workshop/prescreen-rulesets:local
     container_name: prescreen-rulesets
     restart: always
     expose:
@@ -47,11 +33,13 @@ services:
       DEFAULT_ER_SEVERITY: ${DEFAULT_ER_SEVERITY:-sev003}
       DEFAULT_ER_DEPARTMENT: ${DEFAULT_ER_DEPARTMENT:-dept002}
       HF_TOKEN: ${HF_TOKEN}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_API_KEY: ${PRESCREEN_RULESETS_OPENAI_API_KEY}
       PEDIATRIC_AGE_THRESHOLD: ${PEDIATRIC_AGE_THRESHOLD:-18}
       PG_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
   fact-vector-db:
-    image: registry.gitlab.com/visai-ai/projects/bdi/application/fact-vector-db:latest
+    build:
+      context: ./services/fact-vector-db
+    image: thaillm-workshop/fact-vector-db:local
     container_name: fact-vector-db
     restart: always
     expose:
@@ -68,7 +56,7 @@ services:
               count: all # or a specific number like 0
               capabilities: [ gpu ]
     environment:
-      API_KEY: ${API_KEY:-changeme}
+      API_KEY: ${FACT_VECTOR_DB_API_KEY:-changeme}
       CACHE_DIR: ${CACHE_DIR:-/app/cache}
       DEVICE: cuda
       HF_TOKEN: ${HF_TOKEN}
@@ -80,6 +68,8 @@ services:
       TOP_K: ${TOP_K:-32}
       USE_RERANKER: ${USE_RERANKER:-True}
     shm_size: "4gb"
+    volumes:
+      - ./fact-vector-db/cache:/app/cache
   rabbitmq:
     image: rabbitmq:4.2-management
     container_name: rabbitmq
@@ -99,7 +89,9 @@ services:
       - ./rabbitmq/data:/var/lib/rabbitmq
       - ./rabbitmq/log:/var/log/rabbitmq
   backend:
-    image: registry.gitlab.com/visai-ai/projects/bdi/application/backend:latest
+    build:
+      context: ./services/backend
+    image: thaillm-workshop/backend:local
     container_name: backend
     restart: always
     expose:
@@ -112,48 +104,48 @@ services:
       - prescreen-rulesets
       - rabbitmq
     environment:
-      APP_BASE_URL: http://localhost:3001/medical-api
+      APP_BASE_URL: http://localhost:3001/dev-medical-api
       ARENA_ENCRYPTION_KEY: ${ARENA_ENCRYPTION_KEY}
       AUTH_SECRET: ${AUTH_SECRET:-changeme}
       DATABASE_URL: ${DATABASE_URL}
 
-      FRONTEND_BASE_URL: http://localhost:3000/medical
-      FRONTEND_EMAIL_VERIFICATION_CALLBACK_URL: http://localhost:3000/medical/auth/verified-email
-      FRONTEND_EMAIL_VERIFICATION_FAILED_CALLBACK_URL: http://localhost:3000/medical/auth/verify-email
-      FRONTEND_RESET_PASSWORD_CALLBACK_URL: http://localhost:3000/medical/auth/reset-password
+      FRONTEND_BASE_URL: http://localhost:3000/dev-medical
+      FRONTEND_EMAIL_VERIFICATION_CALLBACK_URL: http://localhost:3000/dev-medical/auth/verified-email
+      FRONTEND_EMAIL_VERIFICATION_FAILED_CALLBACK_URL: http://localhost:3000/dev-medical/auth/verify-email
+      FRONTEND_RESET_PASSWORD_CALLBACK_URL: http://localhost:3000/dev-medical/auth/reset-password
 
       INTERNAL_AI_API_KEY: ${INTERNAL_AI_API_KEY:-changeme}
       LLM_API_KEY: ${LLM_API_KEY:-changeme}
-      LLM_BASE_URL: https://api.openai.com/v1
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
       LLM_MODEL: ${LLM_MODEL:-gpt-5.4}
-      LLM_ENABLE_TOOLS: true
+      LLM_ENABLE_TOOLS: ${LLM_ENABLE_TOOLS:-true}
 
       LLM_ARENA_1_API_KEY: ${LLM_ARENA_1_API_KEY:-changeme}
-      LLM_ARENA_1_NAME: ThaiLLM-Qwen
-      LLM_ARENA_1_BASE_URL: https://thaillm.or.th/vllm-qwen/v1
-      LLM_ARENA_1_MODEL: Qwen/Qwen3-30B-A3B-Instruct-2507-FP8
+      LLM_ARENA_1_BASE_URL: ${LLM_ARENA_1_BASE_URL:-https://thaillm.or.th/vllm-qwen/v1}
+      LLM_ARENA_1_MODEL: ${LLM_ARENA_1_MODEL:-Qwen/Qwen3-30B-A3B-Instruct-2507-FP8}
+      LLM_ARENA_1_NAME: ${LLM_ARENA_1_NAME:-ThaiLLM-Qwen}
 
       LLM_ARENA_2_API_KEY: ${LLM_ARENA_2_API_KEY:-changeme}
-      LLM_ARENA_2_NAME: ThaiLLM-OpenThaiGPT
-      LLM_ARENA_2_BASE_URL: https://thaillm.or.th/api/openthaigpt/v1
-      LLM_ARENA_2_MODEL: /model
+      LLM_ARENA_2_BASE_URL: ${LLM_ARENA_2_BASE_URL:-https://thaillm.or.th/api/openthaigpt/v1}
+      LLM_ARENA_2_MODEL: ${LLM_ARENA_2_MODEL:-/model}
+      LLM_ARENA_2_NAME: ${LLM_ARENA_2_NAME:-ThaiLLM-OpenThaiGPT}
 
       LLM_ARENA_3_API_KEY: ${LLM_ARENA_3_API_KEY:-changeme}
-      LLM_ARENA_3_NAME: ThaiLLM-Pathumma
-      LLM_ARENA_3_BASE_URL: https://thaillm.or.th/api/pathumma/v1
-      LLM_ARENA_3_MODEL: /model
+      LLM_ARENA_3_BASE_URL: ${LLM_ARENA_3_BASE_URL:-https://thaillm.or.th/api/pathumma/v1}
+      LLM_ARENA_3_MODEL: ${LLM_ARENA_3_MODEL:-/model}
+      LLM_ARENA_3_NAME: ${LLM_ARENA_3_NAME:-ThaiLLM-Pathumma}
 
       LLM_ARENA_4_API_KEY: ${LLM_ARENA_4_API_KEY:-changeme}
-      LLM_ARENA_4_NAME: ThaiLLM-Typhoon
-      LLM_ARENA_4_BASE_URL: https://thaillm.or.th/api/typhoon/v1
-      LLM_ARENA_4_MODEL: /model
+      LLM_ARENA_4_BASE_URL: ${LLM_ARENA_4_BASE_URL:-https://thaillm.or.th/api/typhoon/v1}
+      LLM_ARENA_4_MODEL: ${LLM_ARENA_4_MODEL:-/model}
+      LLM_ARENA_4_NAME: ${LLM_ARENA_4_NAME:-ThaiLLM-Typhoon}
 
       LLM_ARENA_5_API_KEY: ${LLM_ARENA_5_API_KEY:-changeme}
-      LLM_ARENA_5_NAME: ThaiLLM-THaLLE
-      LLM_ARENA_5_BASE_URL: https://thaillm.or.th/api/kbtg/v1
-      LLM_ARENA_5_MODEL: /model
+      LLM_ARENA_5_BASE_URL: ${LLM_ARENA_5_BASE_URL:-https://thaillm.or.th/api/kbtg/v1}
+      LLM_ARENA_5_MODEL: ${LLM_ARENA_5_MODEL:-/model}
+      LLM_ARENA_5_NAME: ${LLM_ARENA_5_NAME:-ThaiLLM-THaLLE}
 
-      MEDICAL_FACTS_API_KEY: ${MEDICAL_FACTS_API_KEY:-changeme}
+      MEDICAL_FACTS_API_KEY: ${FACT_VECTOR_DB_API_KEY:-changeme}
       MEDICAL_FACTS_API_URL: http://fact-vector-db:41000
       NODE_ENV: development
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
@@ -173,9 +165,11 @@ services:
       DB_AUTO_MIGRATION: true
       ENABLE_CRON_JOB: true
       ADMIN_EMAILS:
-      EMAIL_TEMPLATE_QUEUE: q.email
+      EMAIL_TEMPLATE_QUEUE: bdi.email.queue
   frontend:
-    image: registry.gitlab.com/visai-ai/projects/bdi/application/frontend:latest
+    build:
+      context: ./services/frontend
+    image: thaillm-workshop/frontend:local
     container_name: frontend
     restart: always
     expose:
