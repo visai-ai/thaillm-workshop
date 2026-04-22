@@ -133,3 +133,39 @@
    docker compose down            # stop containers, keep volumes
    docker compose down -v         # also remove named volumes (bind mounts on disk stay)
    ```
+
+## Running `fact-vector-db` on CPU
+
+By default `fact-vector-db` is configured for an NVIDIA GPU (`DEVICE: cuda` plus a GPU reservation in [docker-compose.yaml](docker-compose.yaml)). If you don't have a GPU or the NVIDIA Container Toolkit installed, you can run the service on CPU instead. Embedding and rerank will be noticeably slower, but everything still works end-to-end.
+
+Create a `docker-compose.override.yaml` next to `docker-compose.yaml` — Compose merges it automatically:
+
+```yaml
+services:
+  fact-vector-db:
+    environment:
+      DEVICE: cpu
+    deploy:
+      resources:
+        reservations:
+          devices: !reset []
+```
+
+Then build and start the stack as usual:
+
+```bash
+docker compose build fact-vector-db
+docker compose up -d
+```
+
+Verify it picked up CPU mode:
+
+```bash
+docker compose logs fact-vector-db | grep -i "Device:"
+# Startup complete. Device: cpu
+```
+
+Notes:
+- The service auto-detects CUDA via `torch.cuda.device_count()`, so if no GPU is visible to the container it will fall back to CPU even without `DEVICE: cpu`. Setting it explicitly just makes the intent clear.
+- `USE_RERANKER=False` in `.env` reduces CPU load further if rerank latency is too high.
+- When running CPU-only you can skip the NVIDIA Container Toolkit prerequisite listed above.
